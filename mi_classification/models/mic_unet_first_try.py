@@ -7,6 +7,7 @@ import pandas as pd
 from torch.utils.data import Dataset
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+label_encoding = {'Heart': 0, 'Lung': 1, 'Liver': 2}
 
 class ClassificationDataset(Dataset):
     def __init__(self, h5_file, mlset):
@@ -29,8 +30,12 @@ class ClassificationDataset(Dataset):
 
     def __getitem__(self, idx):
         image = self._h5['images'][self.indices[idx], ...]
+        label = self.df.iloc[self.indices[idx], 2].decode("utf-8")
+        # the model does not understand strings, so we should create a translating systems from string to number
+        num_label = np.array(label_encoding[label])
 
-        return image
+
+        return image, num_label
 
 
 
@@ -38,4 +43,5 @@ class ClassificationDataset(Dataset):
 if __name__ == "__main__":
     h5_path = Path(r"C:\Users\elisa\GitHub_projects\medical_image_classification\data\preprocess.h5")
     train_dataset = ClassificationDataset(h5_path, 'training')
-    train_dataset.get_indices()
+    train_dataset.__getitem__(2)
+
