@@ -6,14 +6,17 @@ import h5py
 import numpy as np
 import pandas as pd
 import torch
+from PIL import Image, ImageDraw
 from monai.networks.nets import BasicUnet
 from torch import optim, nn
 from torch.utils.data import Dataset, DataLoader
+from lightning.pytorch import loggers as pl_loggers
 
 from mi_classification.models.custom_model import DisagioNet
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 label_encoding = {'Heart': 0, 'Lung': 1, 'Liver': 2}
+label_decoding = {value: key for key, value in label_encoding.items()}
 
 class ClassificationDataset(Dataset):
     # Dataset is the parent class
@@ -58,41 +61,67 @@ class FancyModel(DisagioNet, L.LightningModule):
     def training_step(self, batch, batch_idx):
         x = batch[0].unsqueeze(1)
         out = self.forward(x)
-        # we are going to use the softmax functon as activation fnction because it gives the probability of something occurring
+        # we are going to use the softmax functon as activation function because it gives the probability of something occurring
+        # we need the activation function to make some sense out of the logits (raw data) returned by the model
         out_act = nn.Softmax()(out)
+        out_max = torch.argmax(out_act, dim=1).detach().numpy()
+        labels = [label_decoding[i] for i in out_max]
         loss = nn.CrossEntropyLoss()(out, batch[1].long()) # batch[1] is the list of labels
         self.log('train_loss', loss)
+        self.write_image(batch_idx, x, labels, 0)
         return loss
 
     def validation_step(self, batch, batch_idx):
         x = batch[0].unsqueeze(1)
         out = self.forward(x)
-        # we are going to use the softmax functon as activation fnction because it gives the probability of something occurring
         out_act = nn.Softmax()(out)
+        out_max = torch.argmax(out_act, dim=1).detach().numpy()
+        labels = [label_decoding[i] for i in out_max]
         loss = nn.CrossEntropyLoss()(out, batch[1].long())  # batch[1] is the list of labels
         self.log('val_loss', loss)
+        self.write_image(batch_idx, x, labels, 1)
         return loss
+
+    def write_image(self, batch_idx, images, predicted_label, mlset_idx):
+        # we do not write images every step because it takes too much disk space. We write every 10 steps (ex)
+        k = 10 if mlset_idx == 0 else 1
+        if batch_idx%k == 0:
+            np_images = images.detach().numpy()
+            first_image = np_images[0][0]
+            first_label = predicted_label[0]
+            im = Image.fromarray(first_image) # we need to use pillow to get the image as an actual image and not a numpy array
+            ImageDraw.Draw(im).text(
+                (20, 20), # location over the image where the text is going to be displayed
+                first_label, # tect being typed
+                255 # color. It is going to be White
+            )
+            final_image = np.asarray(im).reshape(1,256,256)
+            normalized_final_image = (final_image - np.min(final_image)) / (np.max(final_image) - np.min(final_image))
+            self.loggers[mlset_idx].experiment.add_image(f"image_{batch_idx}", normalized_final_image, self.current_epoch)
 
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.lr) # we use Adam as a backpropagation algh.
         return optimizer
 
-def train_pytorch_model(h5_path):
+def train_pytorch_model(h5_path, model_name: str):
     batch_size = 2
     train_dataset = ClassificationDataset(h5_path, 'training')
     val_dataset = ClassificationDataset(h5_path, 'validation')
     train_data_loader = DataLoader(train_dataset, batch_size=batch_size)
     val_data_loader = DataLoader(val_dataset, batch_size=batch_size)
+    tb_logger = [pl_loggers.TensorBoardLogger(save_dir=fr"C:\Users\elisa\GitHub_projects\medical_image_classification\{model_name}\training"),
+                 pl_loggers.TensorBoardLogger(save_dir=fr"C:\Users\elisa\GitHub_projects\medical_image_classification\{model_name}\validation")]
     dis_model = FancyModel()
     print(FancyModel.__mro__)
     #compiled_model = torch.compile(dis_model)
-    trainer = L.Trainer(max_epochs=2)
+    trainer = L.Trainer(max_epochs=20, logger=tb_logger, reload_dataloaders_every_n_epochs=1)
     trainer.fit(model=dis_model, train_dataloaders=train_data_loader, val_dataloaders=val_data_loader)
 
 if __name__ == "__main__":
+    model_name = 'model_1'
     h5_path = Path(r"C:\Users\elisa\GitHub_projects\medical_image_classification\data\preprocess.h5")
-    train_pytorch_model(h5_path)
+    train_pytorch_model(h5_path, model_name)
 
 
 

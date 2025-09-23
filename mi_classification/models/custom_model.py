@@ -1,5 +1,5 @@
 """"
-This custom model was created starting from BasicUnet model, but with classification as an aim
+This custom model was created starting from BasicUnet model, but with classification as its aim
 """
 
 from typing import Sequence, Any
@@ -16,8 +16,8 @@ class DisagioNet(nn.Module):
 
     def __init__(
         self,
-        spatial_dims: int = 2,
-        in_channels: int = 1,
+        spatial_dims: int = 2, # we are dealing with 2d images
+        in_channels: int = 1, # we are considering images 1 at a time (not series)
         out_channels: int = 2,
         features: Sequence[int] = (32, 32, 64, 128, 256),
         act: str | tuple = ("LeakyReLU", {"negative_slope": 0.1, "inplace": True}),
@@ -25,7 +25,7 @@ class DisagioNet(nn.Module):
         bias: bool = True,
         dropout: float | tuple = 0.0,
         upsample: str = "deconv",
-        n_classes: int = 3
+        n_classes: int = 3 # we have 3 classes: "Heart", "Liver", "Lung"
     ):
         """
         A UNet implementation with 1D/2D/3D supports.
@@ -105,9 +105,9 @@ class DisagioNet(nn.Module):
         x2 = self.down_2(x1)
         x3 = self.down_3(x2)
         x4 = self.down_4(x3)
-        x5 = nn.AvgPool2d(4,4)(x4)
+        x5 = nn.AvgPool2d(4,4)(x4) # we do this to reduce the number of parameters (weights) of the model
         x6 = nn.Flatten()(x5)
-        logits = self.linear_layer(x6)
+        logits = self.linear_layer(x6) # raw values before the activation function
 
 
         return logits
