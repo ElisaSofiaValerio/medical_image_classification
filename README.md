@@ -14,3 +14,9 @@ Augmentation methods:
 - Translation
 - Scaling
 - Contrast changes
+
+Next steps:
+- write a testing pipeline
+- learn to create a network from an input shape 
+to reach a target shape using as less parameters as possible
+(not linear layers, or just small linear layers)

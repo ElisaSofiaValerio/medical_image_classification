@@ -1,4 +1,5 @@
 import os
+from os import mkdir
 from pathlib import Path
 import pytorch_lightning as L
 
@@ -7,7 +8,7 @@ import numpy as np
 import pandas as pd
 import torch
 from PIL import Image, ImageDraw
-from monai.networks.nets import BasicUnet
+from sklearn.metrics import classification_report
 from torch import optim, nn
 from torch.utils.data import Dataset, DataLoader
 from lightning.pytorch import loggers as pl_loggers
@@ -118,10 +119,54 @@ def train_pytorch_model(h5_path, model_name: str):
     trainer = L.Trainer(max_epochs=20, logger=tb_logger, reload_dataloaders_every_n_epochs=1)
     trainer.fit(model=dis_model, train_dataloaders=train_data_loader, val_dataloaders=val_data_loader)
 
+def first_test_pytorch_model(h5_path, model_path: str):
+    parent_path = h5_path.parent / "test_output"
+    parent_path.mkdir(exist_ok=True)
+    for L in label_encoding:
+        (parent_path / L).mkdir(exist_ok=True)
+    batch_size = 1
+    test_dataset = ClassificationDataset(h5_path, 'testing')
+    test_data_loader = DataLoader(test_dataset, batch_size=batch_size)
+    # we are now giving the weights we got from the training as ready-in inputs for the model
+    # Lightning way:
+    dis_model = FancyModel.load_from_checkpoint(model_path)
+    # Pytorch way:
+    # dis_model = FancyModel()
+    # weights = torch.load(model_path)
+    # dis_model.load_state_dict(weights['state_dict'])
+
+    c = 0
+    # we want to evaluate the model itself, discharging information about the connections between layers
+    dis_model.eval() # setting the model to evaluation mode
+    preds = []
+    targets = []
+    for x, label in test_data_loader:
+        # the for loop is calling the get_item function of the ClassificationDataset class
+        x = x.unsqueeze(1)
+        out = dis_model(x) # this is equal to calling the forward function of dis_model. It is equal to: dis_model.forward(x)
+        out_act = nn.Softmax()(out)
+        out_max = torch.argmax(out_act, dim=1).detach().numpy()
+        predicted_label = [label_decoding[i] for i in out_max]
+        img = x.detach().numpy().reshape((256, 256)) # reshaping the image to just 256,256 without channel and batch info
+        img = Image.fromarray(img)
+        img = img.convert("L") # converting into a greyscale image because PIL only deals with those
+        img.save(parent_path / predicted_label[0] / f"image_{c}.png")
+        c += 1
+        actual_label = label.detach().numpy()
+        actual_label = [label_decoding[i] for i in actual_label]
+        preds.append(predicted_label[0])
+        targets.append(actual_label[0])
+    print(classification_report(targets, preds))
+
+
+
 if __name__ == "__main__":
     model_name = 'model_1'
     h5_path = Path(r"C:\Users\elisa\GitHub_projects\medical_image_classification\data\preprocess.h5")
     train_pytorch_model(h5_path, model_name)
+    model_path = r"C:\Users\elisa\GitHub_projects\medical_image_classification\model_1\training\lightning_logs\version_0\checkpoints\epoch=19-step=1280.ckpt"
+    first_test_pytorch_model(h5_path, model_path)
+
 
 
 
